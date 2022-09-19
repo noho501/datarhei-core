@@ -27,6 +27,8 @@ ENV CORE_CONFIGFILE=/core/config/config.json
 ENV CORE_STORAGE_DISK_DIR=/core/data
 ENV CORE_DB_DIR=/core/config
 
+RUN ["chmod", "+x", "/core/bin/run.sh"]
+
 VOLUME ["/core/data", "/core/config"]
 ENTRYPOINT ["/core/bin/run.sh"]
 WORKDIR /core

@@ -565,6 +565,8 @@ func (s *server) setRoutesV3(v3 *echo.Group) {
 		v3.GET("/process/:id/facebook/auth", s.v3handler.restream.CheckAuthFB)
 		v3.GET("/process/:id/facebook/account", s.v3handler.restream.GetFBAccountInfo)
 		v3.POST("/process/:id/facebook/live", s.v3handler.restream.CreateFbLive)
+		v3.POST("/process/:id/facebook/me/live", s.v3handler.restream.CreateFbLiveOnMyTimeline)
+		v3.GET("/process/:id/facebook/me/picture", s.v3handler.restream.GetFBMePicture)
 
 		if !s.readOnly {
 			v3.POST("/process", s.v3handler.restream.Add)

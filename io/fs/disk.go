@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/datarhei/core/v16/glob"
 	"github.com/datarhei/core/v16/log"
 )
 
@@ -290,13 +291,21 @@ func (fs *diskFilesystem) List(pattern string) []FileInfo {
 	files := []FileInfo{}
 
 	fs.walk(func(path string, info os.FileInfo) {
+		if path == fs.dir {
+			return
+		}
+
 		name := strings.TrimPrefix(path, fs.dir)
 		if name[0] != os.PathSeparator {
 			name = string(os.PathSeparator) + name
 		}
 
+		if info.IsDir() {
+			name += "/"
+		}
+
 		if len(pattern) != 0 {
-			if ok, _ := filepath.Match(pattern, name); !ok {
+			if ok, _ := glob.Match(pattern, name, '/'); !ok {
 				return
 			}
 		}
@@ -318,6 +327,7 @@ func (fs *diskFilesystem) walk(walkfn func(path string, info os.FileInfo)) {
 		}
 
 		if info.IsDir() {
+			walkfn(path, info)
 			return nil
 		}
 

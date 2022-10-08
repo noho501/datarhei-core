@@ -33,11 +33,11 @@ type Process interface {
 
 	// Stop stops the process and will not let it restart
 	// automatically.
-	Stop() error
+	Stop(wait bool) error
 
 	// Kill stops the process such that it will restart
 	// automatically if it is defined to do so.
-	Kill() error
+	Kill(wait bool) error
 
 	// IsRunning returns whether the process is currently
 	// running or not.
@@ -88,31 +88,37 @@ type Status struct {
 // States
 //
 // finished - Process has been stopped
-//    starting - if process has been actively started or has been waiting for reconnect (order=start, reconnect=any)
-//    finished - if process shall not reconnect (order=stop, reconnect=any)
+//
+//	starting - if process has been actively started or has been waiting for reconnect (order=start, reconnect=any)
+//	finished - if process shall not reconnect (order=stop, reconnect=any)
 //
 // starting - Process is about to start
-//    finishing - if process should be immediately stopped (order=stop, reconnect=any)
-//    running - if process could be started (order=start, reconnect=any)
-//    failed - if process couldn't be started (e.g. binary not found) (order=start, reconnect=any)
+//
+//	finishing - if process should be immediately stopped (order=stop, reconnect=any)
+//	running - if process could be started (order=start, reconnect=any)
+//	failed - if process couldn't be started (e.g. binary not found) (order=start, reconnect=any)
 //
 // running - Process is running
-//    finished - if process exited normally (order=any, reconnect=any)
-//    finishing - if process has been actively stopped (order=stop, reconnect=any)
-//    failed - if process exited abnormally (order=any, reconnect=any)
-//    killed - if process has been actively killed with SIGKILL (order=any, reconnect=any)
+//
+//	finished - if process exited normally (order=any, reconnect=any)
+//	finishing - if process has been actively stopped (order=stop, reconnect=any)
+//	failed - if process exited abnormally (order=any, reconnect=any)
+//	killed - if process has been actively killed with SIGKILL (order=any, reconnect=any)
 //
 // finishing - Process has been actively stopped and will be killed
-//    finished - if process has been actively killed with SIGINT and ffmpeg exited normally (order=stop, reconnect=any)
-//    killed - if process has been actively killed with SIGKILL (order=stop, reconnect=any)
+//
+//	finished - if process has been actively killed with SIGINT and ffmpeg exited normally (order=stop, reconnect=any)
+//	killed - if process has been actively killed with SIGKILL (order=stop, reconnect=any)
 //
 // failed - Process has been failed either by starting or during running
-//    starting - if process has been waiting for reconnect (order=start, reconnect=true)
-//    failed - if process shall not reconnect (order=any, reconnect=false)
+//
+//	starting - if process has been waiting for reconnect (order=start, reconnect=true)
+//	failed - if process shall not reconnect (order=any, reconnect=false)
 //
 // killed - Process has been stopped
-//    starting - if process has been waiting for reconnect (order=start, reconnect=true)
-//    killed - if process shall not reconnect (order=start, reconnect=false)
+//
+//	starting - if process has been waiting for reconnect (order=start, reconnect=true)
+//	killed - if process shall not reconnect (order=start, reconnect=false)
 type stateType string
 
 const (
@@ -184,7 +190,7 @@ type process struct {
 	debuglogger   log.Logger
 	callbacks     struct {
 		onStart       func()
-		onStop        func()
+		onExit        func()
 		onStateChange func(from, to string)
 	}
 	limits Limiter
@@ -233,7 +239,7 @@ func New(config Config) (Process, error) {
 	p.stale.timeout = config.StaleTimeout
 
 	p.callbacks.onStart = config.OnStart
-	p.callbacks.onStop = config.OnExit
+	p.callbacks.onExit = config.OnExit
 	p.callbacks.onStateChange = config.OnStateChange
 
 	p.limits = NewLimiter(LimiterConfig{
@@ -245,7 +251,7 @@ func New(config Config) (Process, error) {
 				"cpu":    cpu,
 				"memory": memory,
 			}).Warn().Log("Stopping because limits are exceeded")
-			p.Kill()
+			p.Kill(false)
 		},
 	})
 
@@ -517,7 +523,7 @@ func (p *process) start() error {
 }
 
 // Stop will stop the process and set the order to "stop"
-func (p *process) Stop() error {
+func (p *process) Stop(wait bool) error {
 	p.order.lock.Lock()
 	defer p.order.lock.Unlock()
 
@@ -527,7 +533,7 @@ func (p *process) Stop() error {
 
 	p.order.order = "stop"
 
-	err := p.stop()
+	err := p.stop(wait)
 	if err != nil {
 		p.debuglogger.WithFields(log.Fields{
 			"state": p.getStateString(),
@@ -541,7 +547,7 @@ func (p *process) Stop() error {
 
 // Kill will stop the process without changing the order such that it
 // will restart automatically if enabled.
-func (p *process) Kill() error {
+func (p *process) Kill(wait bool) error {
 	// If the process is currently not running, we don't need
 	// to do anything.
 	if !p.isRunning() {
@@ -551,13 +557,13 @@ func (p *process) Kill() error {
 	p.order.lock.Lock()
 	defer p.order.lock.Unlock()
 
-	err := p.stop()
+	err := p.stop(wait)
 
 	return err
 }
 
 // stop will stop a process considering the current order and state.
-func (p *process) stop() error {
+func (p *process) stop(wait bool) error {
 	// If the process is currently not running, stop the restart timer
 	if !p.isRunning() {
 		p.unreconnect()
@@ -576,6 +582,26 @@ func (p *process) stop() error {
 		"state": p.getStateString(),
 		"order": p.order.order,
 	}).Debug().Log("Stopping")
+
+	wg := sync.WaitGroup{}
+
+	if wait {
+		wg.Add(1)
+
+		if p.callbacks.onExit == nil {
+			p.callbacks.onExit = func() {
+				wg.Done()
+				p.callbacks.onExit = nil
+			}
+		} else {
+			cb := p.callbacks.onExit
+			p.callbacks.onExit = func() {
+				cb()
+				wg.Done()
+				p.callbacks.onExit = cb
+			}
+		}
+	}
 
 	var err error
 	if runtime.GOOS == "windows" {
@@ -598,6 +624,10 @@ func (p *process) stop() error {
 			})
 			p.killTimerLock.Unlock()
 		}
+	}
+
+	if err == nil && wait {
+		wg.Wait()
 	}
 
 	if err != nil {
@@ -677,7 +707,7 @@ func (p *process) staler(ctx context.Context) {
 			d := t.Sub(last)
 			if d.Seconds() > timeout.Seconds() {
 				p.logger.Info().Log("Stale timeout after %s (%.2f).", timeout, d.Seconds())
-				p.stop()
+				p.stop(false)
 				return
 			}
 		}
@@ -723,7 +753,7 @@ func (p *process) reader() {
 // be scheduled for a restart.
 func (p *process) waiter() {
 	if p.getState() == stateFinishing {
-		p.stop()
+		p.stop(false)
 	}
 
 	if err := p.cmd.Wait(); err != nil {
@@ -800,8 +830,8 @@ func (p *process) waiter() {
 	p.parser.ResetStats()
 
 	// Call the onStop callback
-	if p.callbacks.onStop != nil {
-		go p.callbacks.onStop()
+	if p.callbacks.onExit != nil {
+		go p.callbacks.onExit()
 	}
 
 	p.order.lock.Lock()

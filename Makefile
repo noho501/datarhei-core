@@ -6,6 +6,13 @@ BINSUFFIX := $(shell if [ "${GOOS}" -a "${GOARCH}" ]; then echo "-${GOOS}-${GOAR
 
 all: build
 
+## init: Install required apps
+init:
+	go install honnef.co/go/tools/cmd/staticcheck@latest
+	go install github.com/swaggo/swag/cmd/swag@latest
+	go install github.com/99designs/gqlgen@latest
+	go install golang.org/x/vuln/cmd/govulncheck@latest
+
 ## build: Build core (default)
 build:
 	CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} GOARCH=${GOARCH} go build -o core${BINSUFFIX}
@@ -33,6 +40,10 @@ vet:
 ## fmt: Format code
 fmt:
 	go fmt ./...
+
+## vulncheck: Check for known vulnerabilities in dependencies
+vulncheck:
+	govulncheck ./...
 
 ## update: Update dependencies
 update:
@@ -75,17 +86,17 @@ commit: vet fmt lint test build
 
 ## release: Build a release binary of core
 release:
-	CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} GOARCH=${GOARCH} go build -o core -ldflags="-s -w -X github.com/datarhei/core/app.Commit=$(COMMIT) -X github.com/datarhei/core/app.Branch=$(BRANCH) -X github.com/datarhei/core/app.Build=$(BUILD)"
+	CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} GOARCH=${GOARCH} go build -o core -ldflags="-s -w -X github.com/datarhei/core/v16/app.Commit=$(COMMIT) -X github.com/datarhei/core/v16/app.Branch=$(BRANCH) -X github.com/datarhei/core/v16/app.Build=$(BUILD)"
 
 # github workflow workaround
 release_linux:
-	CGO_ENABLED=0 GOOS=linux GOARCH=${OSARCH} go build -o core -ldflags="-s -w -X github.com/datarhei/core/app.Commit=$(COMMIT) -X github.com/datarhei/core/app.Branch=$(BRANCH) -X github.com/datarhei/core/app.Build=$(BUILD)"
+	CGO_ENABLED=0 GOOS=linux GOARCH=${OSARCH} go build -o core -ldflags="-s -w -X github.com/datarhei/core/v16/app.Commit=$(COMMIT) -X github.com/datarhei/core/v16/app.Branch=$(BRANCH) -X github.com/datarhei/core/v16/app.Build=$(BUILD)"
 
 ## docker: Build standard Docker image
 docker:
 	docker build -t core:$(SHORTCOMMIT) .
 
-.PHONY: help build swagger test vet fmt vendor commit coverage lint release import update
+.PHONY: help init build swagger test vet fmt vulncheck vendor commit coverage lint release import update
 
 ## help: Show all commands
 help: Makefile

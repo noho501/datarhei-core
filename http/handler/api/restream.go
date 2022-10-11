@@ -65,7 +65,7 @@ func NewRestream(restream restream.Restreamer) *RestreamHandler {
 // Add adds a new process
 // @Summary Add a new process
 // @Description Add a new FFmpeg process
-// @ID restream-3-add
+// @ID process-3-add
 // @Accept json
 // @Produce json
 // @Param config body api.ProcessConfig true "Process config"
@@ -106,11 +106,13 @@ func (h *RestreamHandler) Add(c echo.Context) error {
 // GetAll returns all known processes
 // @Summary List all known processes
 // @Description List all known processes. Use the query parameter to filter the listed processes.
-// @ID restream-3-get-all
+// @ID process-3-get-all
 // @Produce json
-// @Param filter query string false "Comma separated list of fields (config, state, report, metadata) that will be part of the output. If empty, all fields will be part of the output"
-// @Param reference query string false "Return only these process that have this reference value. Overrides a list of IDs. If empty, the reference will be ignored"
-// @Param id query string false "Comma separated list of process ids to list"
+// @Param filter query string false "Comma separated list of fields (config, state, report, metadata) that will be part of the output. If empty, all fields will be part of the output."
+// @Param reference query string false "Return only these process that have this reference value. If empty, the reference will be ignored."
+// @Param id query string false "Comma separated list of process ids to list. Overrides the reference. If empty all IDs will be returned."
+// @Param idpattern query string false "Glob pattern for process IDs. If empty all IDs will be returned. Intersected with results from refpattern."
+// @Param refpattern query string false "Glob pattern for process references. If empty all IDs will be returned. Intersected with results from idpattern."
 // @Success 200 {array} api.Process
 // @Security ApiKeyAuth
 // @Router /api/v3/process [get]
@@ -120,8 +122,10 @@ func (h *RestreamHandler) GetAll(c echo.Context) error {
 	wantids := strings.FieldsFunc(util.DefaultQuery(c, "id", ""), func(r rune) bool {
 		return r == rune(',')
 	})
+	idpattern := util.DefaultQuery(c, "idpattern", "")
+	refpattern := util.DefaultQuery(c, "refpattern", "")
 
-	ids := h.restream.GetProcessIDs()
+	ids := h.restream.GetProcessIDs(idpattern, refpattern)
 
 	processes := []api.Process{}
 
@@ -152,7 +156,7 @@ func (h *RestreamHandler) GetAll(c echo.Context) error {
 // Get returns the process with the given ID
 // @Summary List a process by its ID
 // @Description List a process by its ID. Use the filter parameter to specifiy the level of detail of the output.
-// @ID restream-3-get
+// @ID process-3-get
 // @Produce json
 // @Param id path string true "Process ID"
 // @Param filter query string false "Comma separated list of fields (config, state, report, metadata) to be part of the output. If empty, all fields will be part of the output"
@@ -175,7 +179,7 @@ func (h *RestreamHandler) Get(c echo.Context) error {
 // Delete deletes the process with the given ID
 // @Summary Delete a process by its ID
 // @Description Delete a process by its ID
-// @ID restream-3-delete
+// @ID process-3-delete
 // @Produce json
 // @Param id path string true "Process ID"
 // @Success 200 {string} string
@@ -199,7 +203,7 @@ func (h *RestreamHandler) Delete(c echo.Context) error {
 // Update replaces an existing process
 // @Summary Replace an existing process
 // @Description Replace an existing process. This is a shortcut for DELETE+POST.
-// @ID restream-3-update
+// @ID process-3-update
 // @Accept json
 // @Produce json
 // @Param id path string true "Process ID"
@@ -240,7 +244,7 @@ func (h *RestreamHandler) Update(c echo.Context) error {
 // Command issues a command to a process
 // @Summary Issue a command to a process
 // @Description Issue a command to a process: start, stop, reload, restart
-// @ID restream-3-command
+// @ID process-3-command
 // @Accept json
 // @Produce json
 // @Param id path string true "Process ID"
@@ -282,7 +286,7 @@ func (h *RestreamHandler) Command(c echo.Context) error {
 // GetConfig returns the configuration of a process
 // @Summary Get the configuration of a process
 // @Description Get the configuration of a process. This is the configuration as provided by Add or Update.
-// @ID restream-3-get-config
+// @ID process-3-get-config
 // @Produce json
 // @Param id path string true "Process ID"
 // @Success 200 {object} api.ProcessConfig
@@ -307,7 +311,7 @@ func (h *RestreamHandler) GetConfig(c echo.Context) error {
 // GetState returns the current state of a process
 // @Summary Get the state of a process
 // @Description Get the state and progress data of a process
-// @ID restream-3-get-state
+// @ID process-3-get-state
 // @Produce json
 // @Param id path string true "Process ID"
 // @Success 200 {object} api.ProcessState
@@ -332,7 +336,7 @@ func (h *RestreamHandler) GetState(c echo.Context) error {
 // GetReport return the current log and the log history of a process
 // @Summary Get the logs of a process
 // @Description Get the logs and the log history of a process
-// @ID restream-3-get-report
+// @ID process-3-get-report
 // @Produce json
 // @Param id path string true "Process ID"
 // @Success 200 {object} api.ProcessReport
@@ -357,7 +361,7 @@ func (h *RestreamHandler) GetReport(c echo.Context) error {
 // Probe probes a process
 // @Summary Probe a process
 // @Description Probe an existing process to get a detailed stream information on the inputs
-// @ID restream-3-probe
+// @ID process-3-probe
 // @Produce json
 // @Param id path string true "Process ID"
 // @Success 200 {object} api.Probe
@@ -412,7 +416,7 @@ func (h *RestreamHandler) ReloadSkills(c echo.Context) error {
 // GetProcessMetadata returns the metadata stored with a process
 // @Summary Retrieve JSON metadata stored with a process under a key
 // @Description Retrieve the previously stored JSON metadata under the given key. If the key is empty, all metadata will be returned.
-// @ID restream-3-get-process-metadata
+// @ID process-3-get-process-metadata
 // @Produce json
 // @Param id path string true "Process ID"
 // @Param key path string true "Key for data store"
@@ -436,7 +440,7 @@ func (h *RestreamHandler) GetProcessMetadata(c echo.Context) error {
 // SetProcessMetadata stores metadata with a process
 // @Summary Add JSON metadata with a process under the given key
 // @Description Add arbitrary JSON metadata under the given key. If the key exists, all already stored metadata with this key will be overwritten. If the key doesn't exist, it will be created.
-// @ID restream-3-set-process-metadata
+// @ID process-3-set-process-metadata
 // @Produce json
 // @Param id path string true "Process ID"
 // @Param key path string true "Key for data store"

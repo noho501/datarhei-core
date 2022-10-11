@@ -14,6 +14,7 @@ import (
 	"github.com/datarhei/core/v16/ffmpeg"
 	"github.com/datarhei/core/v16/ffmpeg/parse"
 	"github.com/datarhei/core/v16/ffmpeg/skills"
+	"github.com/datarhei/core/v16/glob"
 	"github.com/datarhei/core/v16/io/fs"
 	"github.com/datarhei/core/v16/log"
 	"github.com/datarhei/core/v16/net"
@@ -129,7 +130,7 @@ func New(config Config) (Restreamer, error) {
 	if config.DiskFS != nil {
 		r.fs.diskfs = rfs.New(rfs.Config{
 			FS:     config.DiskFS,
-			Logger: r.logger.WithComponent("DiskFS"),
+			Logger: r.logger.WithComponent("Cleanup").WithField("type", "diskfs"),
 		})
 	} else {
 		r.fs.diskfs = rfs.New(rfs.Config{
@@ -140,7 +141,7 @@ func New(config Config) (Restreamer, error) {
 	if config.MemFS != nil {
 		r.fs.memfs = rfs.New(rfs.Config{
 			FS:     config.MemFS,
-			Logger: r.logger.WithComponent("MemFS"),
+			Logger: r.logger.WithComponent("Cleanup").WithField("type", "memfs"),
 		})
 	} else {
 		r.fs.memfs = rfs.New(rfs.Config{
@@ -205,7 +206,7 @@ func (r *restream) Stop() {
 		// Start() they will get restarted.
 		for id, t := range r.tasks {
 			if t.ffmpeg != nil {
-				t.ffmpeg.Stop()
+				t.ffmpeg.Stop(true)
 			}
 
 			r.unsetCleanup(id)
@@ -479,7 +480,7 @@ func (r *restream) setCleanup(id string, config *app.Config) {
 					},
 				})
 			} else if strings.HasPrefix(c.Pattern, "diskfs:") {
-				r.fs.memfs.SetCleanup(id, []rfs.Pattern{
+				r.fs.diskfs.SetCleanup(id, []rfs.Pattern{
 					{
 						Pattern:       strings.TrimPrefix(c.Pattern, "diskfs:"),
 						MaxFiles:      c.MaxFiles,
@@ -810,16 +811,67 @@ func (r *restream) UpdateProcess(id string, config *app.Config) error {
 	return nil
 }
 
-func (r *restream) GetProcessIDs() []string {
+func (r *restream) GetProcessIDs(idpattern, refpattern string) []string {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	ids := make([]string, len(r.tasks))
-	i := 0
+	if len(idpattern) == 0 && len(refpattern) == 0 {
+		ids := make([]string, len(r.tasks))
+		i := 0
 
-	for id := range r.tasks {
-		ids[i] = id
-		i++
+		for id := range r.tasks {
+			ids[i] = id
+			i++
+		}
+
+		return ids
+	}
+
+	idmap := map[string]int{}
+	count := 0
+
+	if len(idpattern) != 0 {
+		for id := range r.tasks {
+			match, err := glob.Match(idpattern, id)
+			if err != nil {
+				return nil
+			}
+
+			if !match {
+				continue
+			}
+
+			idmap[id]++
+		}
+
+		count++
+	}
+
+	if len(refpattern) != 0 {
+		for _, t := range r.tasks {
+			match, err := glob.Match(refpattern, t.reference)
+			if err != nil {
+				return nil
+			}
+
+			if !match {
+				continue
+			}
+
+			idmap[t.id]++
+		}
+
+		count++
+	}
+
+	ids := []string{}
+
+	for id, n := range idmap {
+		if n != count {
+			continue
+		}
+
+		ids = append(ids, id)
 	}
 
 	return ids
@@ -864,7 +916,6 @@ func (r *restream) deleteProcess(id string) error {
 	}
 
 	r.unsetPlayoutPorts(task)
-
 	r.unsetCleanup(id)
 
 	delete(r.tasks, id)
@@ -947,7 +998,7 @@ func (r *restream) stopProcess(id string) error {
 
 	task.process.Order = "stop"
 
-	task.ffmpeg.Stop()
+	task.ffmpeg.Stop(true)
 
 	r.nProc--
 
@@ -975,7 +1026,7 @@ func (r *restream) restartProcess(id string) error {
 		return nil
 	}
 
-	task.ffmpeg.Kill()
+	task.ffmpeg.Kill(true)
 
 	return nil
 }
@@ -1255,6 +1306,8 @@ func (r *restream) GetPlayout(id, inputid string) (string, error) {
 	return "127.0.0.1:" + strconv.Itoa(port), nil
 }
 
+var ErrMetadataKeyNotFound = errors.New("unknown key")
+
 func (r *restream) SetProcessMetadata(id, key string, data interface{}) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
@@ -1301,11 +1354,11 @@ func (r *restream) GetProcessMetadata(id, key string) (interface{}, error) {
 	}
 
 	data, ok := task.metadata[key]
-	if ok {
-		return data, nil
+	if !ok {
+		return nil, ErrMetadataKeyNotFound
 	}
 
-	return nil, nil
+	return data, nil
 }
 
 func (r *restream) SetMetadata(key string, data interface{}) error {
@@ -1344,11 +1397,11 @@ func (r *restream) GetMetadata(key string) (interface{}, error) {
 	}
 
 	data, ok := r.metadata[key]
-	if ok {
-		return data, nil
+	if !ok {
+		return nil, ErrMetadataKeyNotFound
 	}
 
-	return nil, nil
+	return data, nil
 }
 
 func (r *restream) OAuthFacebook(id, userId, token string) error {

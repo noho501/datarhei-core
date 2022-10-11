@@ -302,7 +302,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/v3/fs/disk/": {
+        "/api/v3/fs/disk": {
             "get": {
                 "security": [
                     {
@@ -487,7 +487,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/v3/fs/mem/": {
+        "/api/v3/fs/mem": {
             "get": {
                 "security": [
                     {
@@ -546,7 +546,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "summary": "Fetch a file from the memory filesystem",
-                "operationId": "memfs-3-get-file-api",
+                "operationId": "memfs-3-get-file",
                 "parameters": [
                     {
                         "type": "string",
@@ -592,7 +592,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "summary": "Add a file to the memory filesystem",
-                "operationId": "memfs-3-put-file-api",
+                "operationId": "memfs-3-put-file",
                 "parameters": [
                     {
                         "type": "string",
@@ -646,7 +646,7 @@ const docTemplate = `{
                     "text/plain"
                 ],
                 "summary": "Remove a file from the memory filesystem",
-                "operationId": "memfs-delete-file-api",
+                "operationId": "memfs-3-delete-file",
                 "parameters": [
                     {
                         "type": "string",
@@ -839,6 +839,30 @@ const docTemplate = `{
             }
         },
         "/api/v3/metrics": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "List all known metrics with their description and labels",
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "List all known metrics with their description and labels",
+                "operationId": "metrics-3-describe",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/api.MetricsDescription"
+                            }
+                        }
+                    }
+                }
+            },
             "post": {
                 "security": [
                     {
@@ -893,24 +917,36 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "summary": "List all known processes",
-                "operationId": "restream-3-get-all",
+                "operationId": "process-3-get-all",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Comma separated list of fields (config, state, report, metadata) that will be part of the output. If empty, all fields will be part of the output",
+                        "description": "Comma separated list of fields (config, state, report, metadata) that will be part of the output. If empty, all fields will be part of the output.",
                         "name": "filter",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Return only these process that have this reference value. Overrides a list of IDs. If empty, the reference will be ignored",
+                        "description": "Return only these process that have this reference value. If empty, the reference will be ignored.",
                         "name": "reference",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Comma separated list of process ids to list",
+                        "description": "Comma separated list of process ids to list. Overrides the reference. If empty all IDs will be returned.",
                         "name": "id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Glob pattern for process IDs. If empty all IDs will be returned. Intersected with results from refpattern.",
+                        "name": "idpattern",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Glob pattern for process references. If empty all IDs will be returned. Intersected with results from idpattern.",
+                        "name": "refpattern",
                         "in": "query"
                     }
                 ],
@@ -940,7 +976,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "summary": "Add a new process",
-                "operationId": "restream-3-add",
+                "operationId": "process-3-add",
                 "parameters": [
                     {
                         "description": "Process config",
@@ -980,7 +1016,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "summary": "List a process by its ID",
-                "operationId": "restream-3-get",
+                "operationId": "process-3-get",
                 "parameters": [
                     {
                         "type": "string",
@@ -1025,7 +1061,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "summary": "Replace an existing process",
-                "operationId": "restream-3-update",
+                "operationId": "process-3-update",
                 "parameters": [
                     {
                         "type": "string",
@@ -1076,7 +1112,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "summary": "Delete a process by its ID",
-                "operationId": "restream-3-delete",
+                "operationId": "process-3-delete",
                 "parameters": [
                     {
                         "type": "string",
@@ -1117,7 +1153,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "summary": "Issue a command to a process",
-                "operationId": "restream-3-command",
+                "operationId": "process-3-command",
                 "parameters": [
                     {
                         "type": "string",
@@ -1170,7 +1206,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "summary": "Get the configuration of a process",
-                "operationId": "restream-3-get-config",
+                "operationId": "process-3-get-config",
                 "parameters": [
                     {
                         "type": "string",
@@ -1214,7 +1250,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "summary": "Retrieve JSON metadata stored with a process under a key",
-                "operationId": "restream-3-get-process-metadata",
+                "operationId": "process-3-get-process-metadata",
                 "parameters": [
                     {
                         "type": "string",
@@ -1261,7 +1297,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "summary": "Add JSON metadata with a process under the given key",
-                "operationId": "restream-3-set-process-metadata",
+                "operationId": "process-3-set-process-metadata",
                 "parameters": [
                     {
                         "type": "string",
@@ -1318,7 +1354,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "summary": "Encode the errorframe",
-                "operationId": "restream-3-playout-errorframencode",
+                "operationId": "process-3-playout-errorframencode",
                 "parameters": [
                     {
                         "type": "string",
@@ -1373,7 +1409,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "summary": "Upload an error frame",
-                "operationId": "restream-3-playout-errorframe",
+                "operationId": "process-3-playout-errorframe",
                 "parameters": [
                     {
                         "type": "string",
@@ -1445,7 +1481,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "summary": "Get the last keyframe",
-                "operationId": "restream-3-playout-keyframe",
+                "operationId": "process-3-playout-keyframe",
                 "parameters": [
                     {
                         "type": "string",
@@ -1503,7 +1539,7 @@ const docTemplate = `{
                     "text/plain"
                 ],
                 "summary": "Close the current input stream",
-                "operationId": "restream-3-playout-reopen-input",
+                "operationId": "process-3-playout-reopen-input",
                 "parameters": [
                     {
                         "type": "string",
@@ -1554,7 +1590,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "summary": "Get the current playout status",
-                "operationId": "restream-3-playout-status",
+                "operationId": "process-3-playout-status",
                 "parameters": [
                     {
                         "type": "string",
@@ -1609,7 +1645,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "summary": "Switch to a new stream",
-                "operationId": "restream-3-playout-stream",
+                "operationId": "process-3-playout-stream",
                 "parameters": [
                     {
                         "type": "string",
@@ -1669,7 +1705,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "summary": "Probe a process",
-                "operationId": "restream-3-probe",
+                "operationId": "process-3-probe",
                 "parameters": [
                     {
                         "type": "string",
@@ -1701,7 +1737,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "summary": "Get the logs of a process",
-                "operationId": "restream-3-get-report",
+                "operationId": "process-3-get-report",
                 "parameters": [
                     {
                         "type": "string",
@@ -1745,7 +1781,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "summary": "Get the state of a process",
-                "operationId": "restream-3-get-state",
+                "operationId": "process-3-get-state",
                 "parameters": [
                     {
                         "type": "string",
@@ -2609,6 +2645,9 @@ const docTemplate = `{
                         "address": {
                             "type": "string"
                         },
+                        "address_tls": {
+                            "type": "string"
+                        },
                         "app": {
                             "type": "string"
                         },
@@ -2730,9 +2769,20 @@ const docTemplate = `{
                                             "type": "integer"
                                         },
                                         "types": {
-                                            "type": "array",
-                                            "items": {
-                                                "type": "string"
+                                            "type": "object",
+                                            "properties": {
+                                                "allow": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "block": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -2896,6 +2946,23 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.MetricsDescription": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "labels": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
                     "type": "string"
                 }
             }
@@ -4203,6 +4270,9 @@ const docTemplate = `{
                         "address": {
                             "type": "string"
                         },
+                        "address_tls": {
+                            "type": "string"
+                        },
                         "app": {
                             "type": "string"
                         },
@@ -4324,9 +4394,20 @@ const docTemplate = `{
                                             "type": "integer"
                                         },
                                         "types": {
-                                            "type": "array",
-                                            "items": {
-                                                "type": "string"
+                                            "type": "object",
+                                            "properties": {
+                                                "allow": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "block": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    }
+                                                }
                                             }
                                         }
                                     }

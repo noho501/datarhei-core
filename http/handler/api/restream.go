@@ -1,6 +1,9 @@
 package api
 
 import (
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
 	"net/http"
 	"strings"
 
@@ -11,6 +14,41 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/lithammer/shortuuid/v4"
 )
+
+type ResFbErr struct {
+	Error struct {
+		Code    int16  `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+type ResFBAuth struct {
+	IsAuthenticated bool        `json:"is_authenticated"`
+	UserId          interface{} `json:"user_id"`
+}
+
+type ResFBMePicture struct {
+	Url string `json:"url"`
+}
+
+type ResFBAccount struct {
+	Data []struct {
+		Picture struct {
+			Data struct {
+				Url string `json:"url"`
+			} `json:"data"`
+		} `json:"picture"`
+		// AccessToken string `json:"access_token"`
+		Name string `json:"name"`
+		Id   string `json:"id"`
+	} `json:"data"`
+	Paging struct {
+		Cursors struct {
+			Before string `json:"before"`
+			After  string `json:"after"`
+		} `json:"cursors"`
+	} `json:"paging"`
+}
 
 // The RestreamHandler type provides functions to interact with a Restreamer instance
 type RestreamHandler struct {
@@ -484,6 +522,278 @@ func (h *RestreamHandler) SetMetadata(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, data)
+}
+
+func (h *RestreamHandler) OAuthFacebook(c echo.Context) error {
+	id := util.PathParam(c, "id")
+
+	var data api.Process
+
+	if err := util.ShouldBindJSONValidation(c, &data, false); err != nil {
+		return api.Err(http.StatusBadRequest, "Invalid JSON", "%s", err)
+	}
+
+	if len(data.OAuthFbAccessToken) == 0 {
+		return api.Err(http.StatusBadRequest, "Token is missing")
+	}
+
+	if len(data.OAuthFbUserId) == 0 {
+		return api.Err(http.StatusBadRequest, "UserID is missing")
+	}
+
+	resp, apiErr := http.Get("https://graph.facebook.com/me?access_token=" + data.OAuthFbAccessToken)
+
+	if resp.StatusCode != http.StatusOK || apiErr != nil {
+		fmt.Printf("[OAuthFacebook] Fail to check auth apiErr %+v\n resp %+v", apiErr, resp)
+
+		return api.Err(http.StatusBadRequest, "Token invalid")
+	}
+
+	if err := h.restream.OAuthFacebook("restreamer-ui:ingest:"+id, data.OAuthFbUserId, data.OAuthFbAccessToken); err != nil {
+		return api.Err(http.StatusBadRequest, "Fail to store token", "%s", err)
+	}
+
+	return c.JSON(http.StatusOK, true)
+}
+
+func (h *RestreamHandler) InvalidOAuthFacebook(c echo.Context) error {
+	id := util.PathParam(c, "id")
+
+	if err := h.restream.InvalidOAuthFacebook("restreamer-ui:ingest:" + id); err != nil {
+		return api.Err(http.StatusBadRequest, "Cannot logout", "%s", err)
+	}
+
+	return c.JSON(http.StatusOK, true)
+}
+
+func (h *RestreamHandler) GetFBAccountInfo(c echo.Context) error {
+	id := util.PathParam(c, "id")
+	p, err := h.restream.GetProcess("restreamer-ui:ingest:" + id)
+
+	if err != nil {
+		return api.Err(http.StatusBadRequest, "Process can not found", "%s", err)
+	}
+
+	if len(p.OAuthFbAccessToken) == 0 || len(p.OAuthFbUserId) == 0 {
+		return api.Err(http.StatusBadRequest, "Unauthorized", "fb_err_190")
+	}
+
+	baseUrl := "https://graph.facebook.com/v14.0/"
+	fields := "picture,access_token,name,id"
+	resp, apiErr := http.Get(baseUrl + p.OAuthFbUserId + "/accounts?access_token=" + p.OAuthFbAccessToken + "&fields=" + fields)
+
+	if apiErr != nil {
+		fmt.Printf("Request to "+baseUrl+"with error %+v\n", apiErr)
+
+		return api.Err(http.StatusBadRequest, "Fail to fetch account infomation", apiErr)
+	}
+
+	body, ioErr := ioutil.ReadAll(resp.Body)
+
+	var accountInfo ResFBAccount
+
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("Request to "+baseUrl+"with error %+v\n", resp)
+
+		var resErr ResFbErr
+
+		json.Unmarshal(body, &resErr)
+
+		if resErr.Error.Code == 190 {
+			return api.Err(http.StatusBadRequest, "Fail to fetch account info", "fb_err_190")
+		}
+
+		return api.Err(http.StatusBadRequest, "Fail to fetch account infomation", resErr.Error.Message)
+	}
+
+	if ioErr != nil {
+		fmt.Printf("IO Error %+v\n", ioErr)
+
+		return api.Err(http.StatusBadRequest, "Fail to fetch account infomation", ioErr)
+	}
+
+	json.Unmarshal(body, &accountInfo)
+
+	return c.JSON(http.StatusOK, accountInfo)
+}
+
+func (h *RestreamHandler) CreateFbLive(c echo.Context) error {
+	id := util.PathParam(c, "id")
+	p, err := h.restream.GetProcess("restreamer-ui:ingest:" + id)
+
+	if err != nil || len(p.OAuthFbAccessToken) == 0 || len(p.OAuthFbUserId) == 0 {
+		return api.Err(http.StatusBadRequest, "Process can not found", "%s", err)
+	}
+
+	var body struct {
+		PageId      string `json:"page_id"`
+		Title       string `json:"title"`
+		Description string `json:"description"`
+	}
+
+	if err := util.ShouldBindJSONValidation(c, &body, false); err != nil {
+		return api.Err(http.StatusBadRequest, "Invalid JSON", "%s", err)
+	}
+
+	resPageToken, apiPageTokenErr := http.Get("https://graph.facebook.com/" + body.PageId + "?fields=access_token&access_token=" + p.OAuthFbAccessToken)
+
+	if resPageToken.StatusCode != http.StatusOK || apiPageTokenErr != nil {
+		fmt.Printf("[CreateFbLive] Fail to get page token apiPageTokenErr %+v\n resPageToken %+v", apiPageTokenErr, resPageToken)
+
+		return api.Err(http.StatusBadRequest, "Cannot get page token")
+	}
+
+	var pageToken struct {
+		AccessToken string `json:"access_token"`
+	}
+
+	bodyPageToken, ioErr := ioutil.ReadAll(resPageToken.Body)
+
+	if ioErr != nil {
+		fmt.Printf("[CreateFbLive] IO error %+v\n", ioErr)
+
+		return api.Err(http.StatusBadRequest, "Fail to create livestream")
+	}
+
+	json.Unmarshal(bodyPageToken, &pageToken)
+
+	client := &http.Client{}
+
+	r, _ := http.NewRequest(http.MethodPost, "https://graph.facebook.com/"+body.PageId+"/live_videos", nil)
+	q := r.URL.Query()
+
+	q.Add("status", "LIVE_NOW")
+	q.Add("title", body.Title)
+	q.Add("description", body.Description)
+	q.Add("access_token", pageToken.AccessToken)
+
+	r.URL.RawQuery = q.Encode()
+
+	r.Header.Add("Content-Type", "application/json")
+
+	resp, apiErr := client.Do(r)
+
+	if resp.StatusCode != http.StatusOK || apiErr != nil {
+		fmt.Printf("[CreateFbLive] request to fb livestream fail %+v\n", resp)
+
+		return api.Err(http.StatusBadRequest, "Fail to create livestream")
+	}
+
+	var livestream struct {
+		Id              string `json:"id"`
+		StreamUrl       string `json:"stream_url"`
+		SecureStreamUrl string `json:"secure_stream_url"`
+	}
+
+	bodyLive, ioErr := ioutil.ReadAll(resp.Body)
+
+	if ioErr != nil {
+		fmt.Printf("[CreateFbLive] IO error %+v\n", ioErr)
+
+		return api.Err(http.StatusBadRequest, "Fail to create livestream")
+	}
+
+	json.Unmarshal(bodyLive, &livestream)
+
+	return c.JSON(http.StatusOK, livestream)
+}
+
+func (h *RestreamHandler) CreateFbLiveOnMyTimeline(c echo.Context) error {
+	id := util.PathParam(c, "id")
+	p, err := h.restream.GetProcess("restreamer-ui:ingest:" + id)
+
+	if err != nil || len(p.OAuthFbAccessToken) == 0 || len(p.OAuthFbUserId) == 0 {
+		return api.Err(http.StatusBadRequest, "Process can not found", "%s", err)
+	}
+
+	var body struct {
+		Title       string `json:"title"`
+		Description string `json:"description"`
+	}
+
+	if err := util.ShouldBindJSONValidation(c, &body, false); err != nil {
+		return api.Err(http.StatusBadRequest, "Invalid JSON", "%s", err)
+	}
+
+	client := &http.Client{}
+
+	r, _ := http.NewRequest(http.MethodPost, "https://graph.facebook.com/me/live_videos", nil)
+	q := r.URL.Query()
+
+	q.Add("status", "LIVE_NOW")
+	q.Add("title", body.Title)
+	q.Add("description", body.Description)
+	q.Add("access_token", p.OAuthFbAccessToken)
+
+	r.URL.RawQuery = q.Encode()
+
+	r.Header.Add("Content-Type", "application/json")
+
+	resp, apiErr := client.Do(r)
+
+	if resp.StatusCode != http.StatusOK || apiErr != nil {
+		fmt.Printf("[CreateFbLiveOnMyTimeline] request to fb livestream fail %+v\n", resp)
+
+		return api.Err(http.StatusBadRequest, "Fail to create livestream")
+	}
+
+	var livestream struct {
+		Id              string `json:"id"`
+		StreamUrl       string `json:"stream_url"`
+		SecureStreamUrl string `json:"secure_stream_url"`
+	}
+
+	bodyLive, ioErr := ioutil.ReadAll(resp.Body)
+
+	if ioErr != nil {
+		fmt.Printf("[CreateFbLiveOnMyTimeline] IO error %+v\n", ioErr)
+
+		return api.Err(http.StatusBadRequest, "Fail to create livestream")
+	}
+
+	json.Unmarshal(bodyLive, &livestream)
+
+	return c.JSON(http.StatusOK, livestream)
+}
+
+func (h *RestreamHandler) GetFBMePicture(c echo.Context) error {
+	id := util.PathParam(c, "id")
+	p, err := h.restream.GetProcess("restreamer-ui:ingest:" + id)
+
+	if err != nil || len(p.OAuthFbAccessToken) == 0 || len(p.OAuthFbUserId) == 0 {
+		return api.Err(http.StatusBadRequest, "Process can not found", "%s", err)
+	}
+
+	// resp, apiErr := http.Get("https://graph.facebook.com/" + p.OAuthFbUserId + "/picture?type=small")
+
+	// if resp.StatusCode != http.StatusOK || apiErr != nil {
+	// 	fmt.Printf("[GetFBMePicture] request to fb fail %+v\n", resp)
+
+	// 	return api.Err(http.StatusBadRequest, "Fail to get FB picture")
+	// }
+
+	// return c.Stream(http.StatusOK, "image/jpeg", resp.Body)
+	return c.JSON(http.StatusOK, ResFBMePicture{Url: "https://graph.facebook.com/" + p.OAuthFbUserId + "/picture?type=small"})
+}
+
+func (h *RestreamHandler) CheckAuthFB(c echo.Context) error {
+	id := util.PathParam(c, "id")
+	p, err := h.restream.GetProcess("restreamer-ui:ingest:" + id)
+	resErr := ResFBAuth{IsAuthenticated: false, UserId: nil}
+
+	if err != nil || len(p.OAuthFbAccessToken) == 0 || len(p.OAuthFbUserId) == 0 {
+		return c.JSON(http.StatusOK, resErr)
+	}
+
+	resp, apiErr := http.Get("https://graph.facebook.com/me?access_token=" + p.OAuthFbAccessToken)
+
+	if resp.StatusCode != http.StatusOK || apiErr != nil {
+		fmt.Printf("Fail to check auth apiErr %+v\n resp %+v", apiErr, resp)
+
+		return c.JSON(http.StatusOK, resErr)
+	}
+
+	return c.JSON(http.StatusOK, ResFBAuth{IsAuthenticated: true, UserId: p.OAuthFbUserId})
 }
 
 func (h *RestreamHandler) getProcess(id, filterString string) (api.Process, error) {

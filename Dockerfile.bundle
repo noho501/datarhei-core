@@ -1,4 +1,4 @@
-ARG CORE_IMAGE=datarhei/base:alpine-core-latest
+ARG CORE_IMAGE=restreamer-core
 
 ARG FFMPEG_IMAGE=datarhei/base:alpine-ffmpeg-latest
 
@@ -14,6 +14,7 @@ ENV CORE_CONFIGFILE=/core/config/config.json
 ENV CORE_STORAGE_DISK_DIR=/core/data
 ENV CORE_DB_DIR=/core/config
 
+RUN ["chmod", "+x", "/core/bin/run.sh"]
 EXPOSE 8080/tcp
 EXPOSE 8181/tcp
 EXPOSE 1935/tcp

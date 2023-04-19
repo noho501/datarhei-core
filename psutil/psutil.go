@@ -2,6 +2,7 @@ package psutil
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -284,8 +285,12 @@ func (u *util) cpuTimes() (*cpuTimesStat, error) {
 		return nil, err
 	}
 
+	if len(times) == 0 {
+		return nil, errors.New("cpu.Times() returned an empty slice")
+	}
+
 	s := &cpuTimesStat{
-		total:  times[0].Total(),
+		total:  cpuTotal(&times[0]),
 		system: times[0].System,
 		user:   times[0].User,
 		idle:   times[0].Idle,
@@ -495,4 +500,9 @@ func (u *util) readFile(path string) ([]string, error) {
 	}
 
 	return lines, nil
+}
+
+func cpuTotal(c *cpu.TimesStat) float64 {
+	return c.User + c.System + c.Idle + c.Nice + c.Iowait + c.Irq +
+		c.Softirq + c.Steal + c.Guest + c.GuestNice
 }

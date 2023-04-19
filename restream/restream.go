@@ -30,32 +30,33 @@ import (
 
 // The Restreamer interface
 type Restreamer interface {
-	ID() string                                                // ID of this instance
-	Name() string                                              // Arbitrary name of this instance
-	CreatedAt() time.Time                                      // time of when this instance has been created
-	Start()                                                    // start all processes that have a "start" order
-	Stop()                                                     // stop all running process but keep their "start" order
-	AddProcess(config *app.Config) error                       // add a new process
-	GetProcessIDs() []string                                   // get a list of all process IDs
-	DeleteProcess(id string) error                             // delete a process
-	UpdateProcess(id string, config *app.Config) error         // update a process
-	StartProcess(id string) error                              // start a process
-	StopProcess(id string) error                               // stop a process
-	RestartProcess(id string) error                            // restart a process
-	ReloadProcess(id string) error                             // reload a process
-	GetProcess(id string) (*app.Process, error)                // get a process
-	GetProcessState(id string) (*app.State, error)             // get the state of a process
-	GetProcessLog(id string) (*app.Log, error)                 // get the logs of a process
-	GetPlayout(id, inputid string) (string, error)             // get the URL of the playout API for a process
-	Probe(id string) app.Probe                                 // probe a process
-	Skills() skills.Skills                                     // get the ffmpeg skills
-	ReloadSkills() error                                       // reload the ffmpeg skills
-	SetProcessMetadata(id, key string, data interface{}) error // set metatdata to a process
-	GetProcessMetadata(id, key string) (interface{}, error)    // get previously set metadata from a process
-	SetMetadata(key string, data interface{}) error            // set general metadata
-	GetMetadata(key string) (interface{}, error)               // get previously set general metadata
-	OAuthFacebook(id, userId, token string) error              // store access token facebook
-	InvalidOAuthFacebook(id string) error                      // remove access token facebook
+	ID() string                                                  // ID of this instance
+	Name() string                                                // Arbitrary name of this instance
+	CreatedAt() time.Time                                        // Time of when this instance has been created
+	Start()                                                      // Start all processes that have a "start" order
+	Stop()                                                       // Stop all running process but keep their "start" order
+	AddProcess(config *app.Config) error                         // Add a new process
+	GetProcessIDs(idpattern, refpattern string) []string         // Get a list of process IDs based on patterns for ID and reference
+	DeleteProcess(id string) error                               // Delete a process
+	UpdateProcess(id string, config *app.Config) error           // Update a process
+	StartProcess(id string) error                                // Start a process
+	StopProcess(id string) error                                 // Stop a process
+	RestartProcess(id string) error                              // Restart a process
+	ReloadProcess(id string) error                               // Reload a process
+	GetProcess(id string) (*app.Process, error)                  // Get a process
+	GetProcessState(id string) (*app.State, error)               // Get the state of a process
+	GetProcessLog(id string) (*app.Log, error)                   // Get the logs of a process
+	GetPlayout(id, inputid string) (string, error)               // Get the URL of the playout API for a process
+	Probe(id string) app.Probe                                   // Probe a process
+	ProbeWithTimeout(id string, timeout time.Duration) app.Probe // Probe a process with specific timeout
+	Skills() skills.Skills                                       // Get the ffmpeg skills
+	ReloadSkills() error                                         // Reload the ffmpeg skills
+	SetProcessMetadata(id, key string, data interface{}) error   // Set metatdata to a process
+	GetProcessMetadata(id, key string) (interface{}, error)      // Get previously set metadata from a process
+	SetMetadata(key string, data interface{}) error              // Set general metadata
+	GetMetadata(key string) (interface{}, error)                 // Get previously set general metadata
+	OAuthFacebook(id, userId, token string) error                // store access token facebook
+	InvalidOAuthFacebook(id string) error                        // remove access token facebook
 }
 
 // Config is the required configuration for a new restreamer instance.
